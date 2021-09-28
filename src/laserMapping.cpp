@@ -137,8 +137,11 @@ float transformAftMapped[6] = {0};
 // last optimization states
 float transformLastMapped[6] = {0};
 
+// Utility functions
 double rad2deg(double radians) { return radians * 180.0 / M_PI; }
+
 double deg2rad(double degrees) { return degrees * M_PI / 180.0; }
+
 Eigen::Matrix4f trans_euler_to_matrix(const float *trans) {
   Eigen::Matrix4f T = Eigen::Matrix4f::Identity();
   Eigen::Matrix3f R;
@@ -154,6 +157,7 @@ Eigen::Matrix4f trans_euler_to_matrix(const float *trans) {
 
   return T;
 }
+
 void transformAssociateToMap() {
   Eigen::Matrix4f T_aft, T_last, T_predict;
   Eigen::Matrix3f R_predict;
@@ -192,6 +196,7 @@ void transformUpdate() {
     transformAftMapped[i] = transformTobeMapped[i];
   }
 }
+
 // lidar coordinate sys to world coordinate sys
 void pointAssociateToMap(PointType const *const pi, PointType *const po) {
   // rot z（transformTobeMapped[2]）
@@ -216,23 +221,9 @@ void pointAssociateToMap(PointType const *const pi, PointType *const po) {
           transformTobeMapped[5];
   po->intensity = pi->intensity;
 }
+
 // lidar coordinate sys to world coordinate sys USE S
 void pointAssociateToMap_all(PointType const *const pi, PointType *const po) {
-  // Eigen::Matrix4f T_aft,T_last,delta_T;
-
-  // Eigen::Matrix3f R_aft,R_last;
-  // Eigen::Quaternionf Q_aft,Q_last;
-  // Eigen::Vector3f t_aft,t_last;
-
-  // T_aft = trans_euler_to_matrix(transformAftMapped);
-  // T_last = trans_euler_to_matrix(transformLastMapped);
-
-  // R_aft = T_aft.block<3,3>(0,0);
-  // R_last = T_last.block<3,3>(0,0);
-
-  // Q_aft = R_aft;
-  // Q_last = R_last;
-
   double s;
   s = pi->intensity - int(pi->intensity);
 
@@ -266,8 +257,10 @@ void pointAssociateToMap_all(PointType const *const pi, PointType *const po) {
   po->z = -sin(ry) * x2 + cos(ry) * z2 + tz;
   po->intensity = pi->intensity;
 }
+
 void RGBpointAssociateToMap(PointType const *const pi,
                             pcl::PointXYZRGB *const po) {
+  // Question: What's the use of 's' here?
   double s;
   s = pi->intensity - int(pi->intensity);
 
@@ -306,6 +299,7 @@ void RGBpointAssociateToMap(PointType const *const pi,
 
   // std::cout<<"DEBUG reflection_map "<<reflection_map<<std::endl;
 
+  // Setting the color of the point based on the intensity
   if (reflection_map < 30) {
     int green = (reflection_map * 255 / 30);
     po->r = 0;
@@ -397,6 +391,7 @@ int main(int argc, char **argv) {
 
   ros::Publisher pubLaserCloudSurround =
       nh.advertise<sensor_msgs::PointCloud2>("/laser_cloud_surround", 100);
+
   ros::Publisher pubLaserCloudSurround_corner =
       nh.advertise<sensor_msgs::PointCloud2>("/laser_cloud_surround_corner",
                                              100);
@@ -406,6 +401,7 @@ int main(int argc, char **argv) {
 
   ros::Publisher pubOdomAftMapped =
       nh.advertise<nav_msgs::Odometry>("/aft_mapped_to_init", 1);
+
   nav_msgs::Odometry odomAftMapped;
   odomAftMapped.header.frame_id = "/camera_init";
   odomAftMapped.child_frame_id = "/aft_mapped";
@@ -416,6 +412,8 @@ int main(int argc, char **argv) {
   ros::param::get("~filter_parameter_corner", filter_parameter_corner);
   double filter_parameter_surf;
   ros::param::get("~filter_parameter_surf", filter_parameter_surf);
+  int update_rate;
+  ros::param::get("~update_rate", update_rate);
 
   std::vector<int> pointSearchInd;
   std::vector<float> pointSearchSqDis;
@@ -453,9 +451,8 @@ int main(int argc, char **argv) {
   }
 
   //------------------------------------------------------------------------------------------------------
-  ros::Rate rate(100);
-  bool status = ros::ok();
-  while (status) {
+  ros::Rate rate(update_rate);
+  while (ros::ok()) {
     ros::spinOnce();
 
     if (newLaserCloudCornerLast && newLaserCloudSurfLast &&
@@ -903,7 +900,8 @@ int main(int argc, char **argv) {
                 float z2 = cz - 0.1 * matV1.at<float>(0, 2);
 
                 // OA = (x0 - x1, y0 - y1, z0 - z1),OB = (x0 - x2, y0 - y2, z0 -
-                // z2)，AB = （x1 - x2, y1 - y2, z1 - z2） cross: |  i      j k |
+                // z2)，AB = （x1 - x2, y1 - y2, z1 - z2） cross: |  i      j k
+                // |
                 //|x0-x1  y0-y1  z0-z1|
                 //|x0-x2  y0-y2  z0-z2|
                 float a012 =
@@ -1328,13 +1326,14 @@ int main(int argc, char **argv) {
                 << t4 - t3 << std::endl;
     }
 
-    status = ros::ok();
     rate.sleep();
   }
-  //--------------------------save map---------------
+
+  // --------------------------save map----------------------------
   std::string surf_filename(map_file_path + "/surf.pcd");
   std::string corner_filename(map_file_path + "/corner.pcd");
   std::string all_points_filename(map_file_path + "/all_points.pcd");
+
   std::ofstream keyframe_file(map_file_path + "/key_frame.txt");
   for (auto kf : keyframe_pose) {
     keyframe_file << kf[0] << " " << kf[1] << " " << kf[2] << " " << kf[3]
@@ -1342,17 +1341,20 @@ int main(int argc, char **argv) {
                   << std::endl;
   }
   keyframe_file.close();
+
   pcl::PointCloud<pcl::PointXYZI> surf_points, corner_points;
   surf_points = *laserCloudSurfFromMap;
   corner_points = *laserCloudCornerFromMap;
+
   if (surf_points.size() > 0 && corner_points.size() > 0) {
     pcl::PCDWriter pcd_writer;
-    std::cout << "saving...";
+    ROS_INFO("Saving the surface pointcloud!");
     pcd_writer.writeBinary(surf_filename, surf_points);
     pcd_writer.writeBinary(corner_filename, corner_points);
     pcd_writer.writeBinary(all_points_filename, *laserCloudFullResColor_pcd);
   } else {
-    std::cout << "no points saved";
+    ROS_INFO(
+        "Did not save the map! Surface pointcloud does not have any points.");
   }
 
   return 0;

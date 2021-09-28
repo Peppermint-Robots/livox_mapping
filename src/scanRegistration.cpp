@@ -48,6 +48,7 @@
 #include <sensor_msgs/PointCloud2.h>
 
 typedef pcl::PointXYZI PointType;
+
 int scanID;
 
 int CloudFeatureFlag[32000];
@@ -56,7 +57,9 @@ ros::Publisher pubLaserCloud;
 ros::Publisher pubCornerPointsSharp;
 ros::Publisher pubSurfPointsFlat;
 ros::Publisher pubLaserCloud_temp;
+
 std::vector<sensor_msgs::PointCloud2ConstPtr> msg_window;
+
 cv::Mat matA1(3, 3, CV_32F, cv::Scalar::all(0));
 cv::Mat matD1(1, 3, CV_32F, cv::Scalar::all(0));
 cv::Mat matV1(3, 3, CV_32F, cv::Scalar::all(0));
@@ -118,6 +121,7 @@ bool plane_judge(const std::vector<PointType> &point_list,
     return false;
   }
 }
+
 void laserCloudHandler_temp(
     const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg) // for hkmars data
 {
@@ -143,6 +147,7 @@ void laserCloudHandler_temp(
   laserCloudOutMsg.header.frame_id = "/livox";
   pubLaserCloud_temp.publish(laserCloudOutMsg);
 }
+
 void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg) {
   pcl::PointCloud<PointType> laserCloudIn;
   pcl::fromROSMsg(*laserCloudMsg, laserCloudIn);
@@ -157,22 +162,21 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg) {
   pcl::PointCloud<PointType> Allpoints;
 
   for (int i = 0; i < cloudSize; i++) {
-
     point.x = laserCloudIn.points[i].x;
     point.y = laserCloudIn.points[i].y;
     point.z = laserCloudIn.points[i].z;
-    double theta =
-        std::atan2(laserCloudIn.points[i].y, laserCloudIn.points[i].z) / M_PI *
-            180 +
-        180;
+
+    double theta = std::atan2(laserCloudIn.points[i].y, laserCloudIn.points[i].z) / M_PI * 180 + 180;
 
     scanID = std::floor(theta / 9);
     float dis = point.x * point.x + point.y * point.y + point.z * point.z;
 
     double dis2 = laserCloudIn.points[i].z * laserCloudIn.points[i].z +
                   laserCloudIn.points[i].y * laserCloudIn.points[i].y;
+
     double theta2 = std::asin(sqrt(dis2 / dis)) / M_PI * 180;
 
+    // Sort of objective function for intensity as mentioned in the paper
     point.intensity = scanID + (laserCloudIn.points[i].intensity / 10000);
     // point.intensity = scanID+(double(i)/cloudSize);
 
@@ -211,7 +215,8 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg) {
   Eigen::Vector3d surf_vector_last(0, 0, 0);
   int last_surf_position = 0;
   double depth_threshold = 0.1;
-  //********************************************************************************************************************************************
+
+  //**************************************************************************************
   for (int i = 5; i < cloudSize - 5; i += count_num) {
     float depth = sqrt(laserCloud->points[i].x * laserCloud->points[i].x +
                        laserCloud->points[i].y * laserCloud->points[i].y +
@@ -219,6 +224,7 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg) {
 
     // if(depth < 2) depth_threshold = 0.05;
     // if(depth > 30) depth_threshold = 0.1;
+
     // left curvature
     float ldiffX = laserCloud->points[i - 4].x + laserCloud->points[i - 3].x -
                    4 * laserCloud->points[i - 2].x +
@@ -235,17 +241,16 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg) {
     float left_curvature = ldiffX * ldiffX + ldiffY * ldiffY + ldiffZ * ldiffZ;
 
     if (left_curvature < 0.01) {
-
       std::vector<PointType> left_list;
 
       for (int j = -4; j < 0; j++) {
         left_list.push_back(laserCloud->points[i + j]);
       }
 
-      if (left_curvature < 0.001)
+      if (left_curvature < 0.001) {
         CloudFeatureFlag[i - 2] =
             1; // surf point flag  && plane_judge(left_list,1000)
-
+      }
       left_surf_flag = true;
     } else {
       left_surf_flag = false;
@@ -327,6 +332,7 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg) {
       }
     }
   }
+
   for (int i = 5; i < cloudSize - 5; i++) {
     float diff_left[2];
     float diff_right[2];
@@ -367,7 +373,6 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg) {
     // break points
     if (fabs(diff_right[0] - diff_left[0]) > 0.1) {
       if (diff_right[0] > diff_left[0]) {
-
         Eigen::Vector3d surf_vector = Eigen::Vector3d(
             laserCloud->points[i - 4].x - laserCloud->points[i].x,
             laserCloud->points[i - 4].y - laserCloud->points[i].y,
@@ -391,14 +396,17 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg) {
               laserCloud->points[i - j].y - laserCloud->points[i - j - 1].y,
               laserCloud->points[i - j].z - laserCloud->points[i - j - 1].z);
 
-          if (j == 3)
+          if (j == 3) {
             break;
+          }
+  
           double temp_dis = temp_vector.norm();
           if (temp_dis < min_dis)
             min_dis = temp_dis;
           if (temp_dis > max_dis)
             max_dis = temp_dis;
         }
+
         bool left_is_plane = plane_judge(left_list, 100);
 
         if (left_is_plane && (max_dis < 2 * min_dis) &&
@@ -411,7 +419,6 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg) {
           }
         }
       } else {
-
         Eigen::Vector3d surf_vector = Eigen::Vector3d(
             laserCloud->points[i + 4].x - laserCloud->points[i].x,
             laserCloud->points[i + 4].y - laserCloud->points[i].y,
@@ -451,8 +458,9 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg) {
           if (depth_right < depth_left) {
             CloudFeatureFlag[i] = 100;
           } else {
-            if (depth_left == 0)
+            if (depth_left == 0) {
               CloudFeatureFlag[i] = 100;
+            }
           }
         }
       }
@@ -504,6 +512,7 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg) {
     float dis2 = laserCloud->points[i].y * laserCloud->points[i].y +
                  laserCloud->points[i].z * laserCloud->points[i].z;
     float theta2 = std::asin(sqrt(dis2 / dis)) / M_PI * 180;
+
     // std::cout<<"DEBUG theta "<<theta2<<std::endl;
     // if(theta2 > 34.2 || theta2 < 1){
     //    continue;
@@ -558,7 +567,8 @@ int main(int argc, char **argv) {
   //                                ("/livox/lidar_temp", 2);
 
   ros::Subscriber subLaserCloud = nh.subscribe<sensor_msgs::PointCloud2>(
-      "/livox/lidar", 100, laserCloudHandler);
+      "/livox/lidar", 50, laserCloudHandler);
+
   pubLaserCloud = nh.advertise<sensor_msgs::PointCloud2>("/livox_cloud", 20);
 
   pubCornerPointsSharp =

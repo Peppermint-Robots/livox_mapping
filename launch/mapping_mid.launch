@@ -6,9 +6,10 @@
   </node>
 
   <node pkg="livox_mapping" type="loam_laserMapping" name="laserMapping" output="screen">
-  <param name="map_file_path" type="string" value=" " />
-  <param name="filter_parameter_corner" type="double" value="0.1" />
-  <param name="filter_parameter_surf" type="double" value="0.2" />
+    <param name="map_file_path" type="string" value="/home/harshal/ROSBAGS/livox_office/" />
+    <param name="filter_parameter_corner" type="double" value="0.1" />
+    <param name="filter_parameter_surf" type="double" value="0.2" />
+    <param name="update_rate" type="int" value="80" />
   </node>
 
   <group if="$(arg rviz)">
