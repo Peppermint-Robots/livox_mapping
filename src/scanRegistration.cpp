@@ -154,19 +154,25 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg) {
 
   int cloudSize = laserCloudIn.points.size();
 
-  if (cloudSize > 32000)
+  // Question: Why limit to 32000?
+  if (cloudSize > 32000) {
     cloudSize = 32000;
+  }
 
   int count = cloudSize;
   PointType point;
   pcl::PointCloud<PointType> Allpoints;
 
+  // Adding points which are not at inf distance in the pointcloud
   for (int i = 0; i < cloudSize; i++) {
     point.x = laserCloudIn.points[i].x;
     point.y = laserCloudIn.points[i].y;
     point.z = laserCloudIn.points[i].z;
 
-    double theta = std::atan2(laserCloudIn.points[i].y, laserCloudIn.points[i].z) / M_PI * 180 + 180;
+    double theta =
+        std::atan2(laserCloudIn.points[i].y, laserCloudIn.points[i].z) / M_PI *
+            180 +
+        180;
 
     scanID = std::floor(theta / 9);
     float dis = point.x * point.x + point.y * point.y + point.z * point.z;
@@ -197,9 +203,7 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg) {
   }
 
   pcl::PointCloud<PointType> cornerPointsSharp;
-
   pcl::PointCloud<PointType> surfPointsFlat;
-
   pcl::PointCloud<PointType> laserCloudFull;
 
   int debugnum1 = 0;
@@ -211,19 +215,28 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg) {
   int count_num = 1;
   bool left_surf_flag = false;
   bool right_surf_flag = false;
+
   Eigen::Vector3d surf_vector_current(0, 0, 0);
   Eigen::Vector3d surf_vector_last(0, 0, 0);
-  int last_surf_position = 0;
-  double depth_threshold = 0.1;
 
-  //**************************************************************************************
+  int last_surf_position = 0;
+
+  // ********************************************************************************
+  // Extracting planar features
   for (int i = 5; i < cloudSize - 5; i += count_num) {
     float depth = sqrt(laserCloud->points[i].x * laserCloud->points[i].x +
                        laserCloud->points[i].y * laserCloud->points[i].y +
                        laserCloud->points[i].z * laserCloud->points[i].z);
 
-    // if(depth < 2) depth_threshold = 0.05;
-    // if(depth > 30) depth_threshold = 0.1;
+    // Note: They've considered 5 consecutive points because it's mentioned in
+    // the paper of loam_livox In LeGO-LOAM, they're considering 10 consecutive
+    // points If the curvature is very less, then that means that 5 points lie
+    // on the same plane
+
+    // 1 is for surface/plane point
+    // 100, 150 is edge/corner points feature
+    // 250 is for outliers
+    // 0 is for nothing
 
     // left curvature
     float ldiffX = laserCloud->points[i - 4].x + laserCloud->points[i - 3].x -
@@ -249,8 +262,9 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg) {
 
       if (left_curvature < 0.001) {
         CloudFeatureFlag[i - 2] =
-            1; // surf point flag  && plane_judge(left_list,1000)
+            1; // surf point flag && plane_judge(left_list,1000)
       }
+
       left_surf_flag = true;
     } else {
       left_surf_flag = false;
@@ -277,9 +291,10 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg) {
       for (int j = 1; j < 5; j++) {
         right_list.push_back(laserCloud->points[i + j]);
       }
-      if (right_curvature < 0.001)
+      if (right_curvature < 0.001) {
         CloudFeatureFlag[i + 2] =
-            1; // surf point flag  && plane_judge(right_list,1000)
+            1; // surf point flag && plane_judge(right_list,1000)
+      }
 
       count_num = 4;
       right_surf_flag = true;
@@ -326,7 +341,8 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg) {
       double last_dis = last_tmp.norm();
       double current_dis = current_tmp.norm();
 
-      if (cc < 0.5 && last_dis > 0.05 && current_dis > 0.05) { //
+      // Points on the left and right side lie on the same plane
+      if (cc < 0.5 && last_dis > 0.05 && current_dis > 0.05) {
         debugnum5++;
         CloudFeatureFlag[i] = 150;
       }
@@ -399,7 +415,7 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg) {
           if (j == 3) {
             break;
           }
-  
+
           double temp_dis = temp_vector.norm();
           if (temp_dis < min_dis)
             min_dis = temp_dis;
@@ -466,6 +482,7 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg) {
       }
     }
 
+    // For edge features
     // break point select
     if (CloudFeatureFlag[i] == 100) {
       debugnum2++;
@@ -493,6 +510,9 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg) {
       }
       double cc = fabs(norm_front.dot(norm_back) /
                        (norm_front.norm() * norm_back.norm()));
+
+      // If angle is less than 36 degrees then cloudFeatureFlag = 0. It's
+      // neither plane nor edge
       if (cc < 0.8) {
         debugnum3++;
       } else {
@@ -558,13 +578,6 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg) {
 int main(int argc, char **argv) {
   ros::init(argc, argv, "scanRegistration");
   ros::NodeHandle nh;
-
-  // ros::Subscriber subLaserCloud_for_hk =
-  // nh.subscribe<sensor_msgs::PointCloud2>
-  //                                 ("/livox/lidar", 2,
-  //                                 laserCloudHandler_temp);
-  // pubLaserCloud_for_hk = nh.advertise<sensor_msgs::PointCloud2>
-  //                                ("/livox/lidar_temp", 2);
 
   ros::Subscriber subLaserCloud = nh.subscribe<sensor_msgs::PointCloud2>(
       "/livox/lidar", 50, laserCloudHandler);
